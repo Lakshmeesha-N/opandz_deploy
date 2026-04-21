@@ -7,7 +7,7 @@ supabase
 httpx
 PyMuPDF
 Pillow
-torch
+torch==2.2.0+cpu
 weasyprint
 transformers
 ultralytics
@@ -15,4 +15,3 @@ jinja2
 langchain-core
 langgraph
 langchain-openai
-langchain-groq
