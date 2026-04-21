@@ -1,0 +1,13 @@
+/* Custom scrollbar for a pro feel */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #f8fafc; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Fixed height for the preview iframe */
+#previewFrame {
+    width: 100%;
+    height: calc(100vh - 150px);
+    border: none;
+    background: white;
+}

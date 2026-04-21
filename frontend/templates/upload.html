@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}New Extraction{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <div class="mb-6">
+        <p class="text-slate-500">Upload a PDF(donot upload scanned documents) and start processing it into an editable blueprint.</p>
+    </div>
+
+    <form id="uploadForm" class="bg-white border rounded-xl p-6 shadow-sm space-y-5">
+        <div>
+            <label for="displayName" class="block text-sm font-semibold text-slate-700 mb-2">Document name</label>
+            <input id="displayName" name="display_name" type="text" required
+                   placeholder="Kitchen renovation plan"
+                   class="w-full border border-slate-300 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div>
+            <label for="pdfFile" class="block text-sm font-semibold text-slate-700 mb-2">PDF file</label>
+            <input id="pdfFile" name="file" type="file" accept="application/pdf,.pdf" required
+                   class="w-full border border-dashed border-slate-300 rounded-lg p-4 text-sm bg-slate-50">
+        </div>
+
+        <div id="uploadMessage" class="hidden rounded-lg p-4 text-sm"></div>
+
+        <div class="flex items-center gap-3">
+            <button id="uploadButton" type="submit"
+                    class="bg-slate-900 text-white px-5 py-3 rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-60">
+                Start Extraction
+            </button>
+            <a href="/" class="text-sm text-slate-500 hover:text-slate-800">Back to vault</a>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('uploadForm');
+    const button = document.getElementById('uploadButton');
+    const message = document.getElementById('uploadMessage');
+    const displayName = document.getElementById('displayName');
+    const fileInput = document.getElementById('pdfFile');
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const email = getSavedEmail();
+        if (!email) {
+            showUploadMessage('Please set your email in the sidebar first.', 'error');
+            return;
+        }
+
+        const file = fileInput.files[0];
+        if (!file) {
+            showUploadMessage('Please choose a PDF file.', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('display_name', displayName.value.trim());
+        formData.append('user_email', email);
+        formData.append('file', file);
+
+        button.disabled = true;
+        button.textContent = 'Starting...';
+        showUploadMessage('Uploading PDF and starting extraction...', 'info');
+
+        try {
+            const response = await fetch('/extract/upload', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.detail || `Upload failed with status ${response.status}`);
+            }
+
+            showUploadMessage('Extraction started. Opening the viewer...', 'success');
+            window.location.href = `/view/${encodeURIComponent(data.request_id)}`;
+        } catch (error) {
+            showUploadMessage(error.message, 'error');
+            button.disabled = false;
+            button.textContent = 'Start Extraction';
+        }
+    });
+
+    function showUploadMessage(text, type) {
+        const classes = {
+            info: 'bg-blue-50 border border-blue-200 text-blue-700',
+            success: 'bg-green-50 border border-green-200 text-green-700',
+            error: 'bg-red-50 border border-red-200 text-red-700'
+        };
+        message.className = `${classes[type]} rounded-lg p-4 text-sm`;
+        message.textContent = text;
+    }
+});
+</script>
+{% endblock %}

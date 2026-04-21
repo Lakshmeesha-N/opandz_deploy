@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Your Document Vault{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <p class="text-slate-500">Manage and view your AI-extracted blueprints.</p>
+        <button onclick="fetchVault()" class="text-sm bg-white border px-4 py-2 rounded-lg hover:bg-slate-50">🔄 Refresh</button>
+    </div>
+
+    <div id="vaultList" class="grid grid-cols-1 gap-4">
+        <div class="animate-pulse text-slate-400">Loading your vault...</div>
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,341 @@
+{% extends "base.html" %}
+{% block title %}Blueprint Viewer{% endblock %}
+
+{% block content %}
+<div class="h-full flex gap-6 -m-8">
+    <div class="w-1/2 bg-white border-r flex flex-col">
+        <div class="p-4 border-b flex justify-between items-center bg-slate-50">
+            <span class="font-bold text-sm">Page Preview</span>
+            <div class="flex items-center gap-2">
+                <div class="flex gap-2" id="pageControls"></div>
+                <a
+                    class="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+                    href="/render/download-pdf/{{ request_id }}"
+                    download>
+                    Download
+                </a>
+            </div>
+        </div>
+        <div class="flex-1 overflow-auto bg-slate-200 p-8" id="iframeContainer">
+            <iframe id="htmlPreview" class="w-full bg-white shadow-2xl min-h-[1200px] border-none"></iframe>
+        </div>
+    </div>
+
+    <div class="w-1/2 bg-white flex flex-col" id="sidePanel">
+        <div class="p-4 border-b bg-slate-50">
+            <div class="flex items-center justify-between gap-4">
+                <div>
+                    <h3 class="font-bold text-sm text-slate-800">Edit With Agent</h3>
+                    <p class="text-xs text-slate-500 mt-1">Ask for text or layout changes. Use block IDs from the preview for precise edits.</p>
+                </div>
+                <div class="flex gap-2 shrink-0" role="group" aria-label="Edit mode">
+                    <button
+                        type="button"
+                        class="mode-btn px-3 py-1.5 text-xs rounded-md border"
+                        data-mode="new">
+                        New
+                    </button>
+                    <button
+                        type="button"
+                        class="mode-btn px-3 py-1.5 text-xs rounded-md border"
+                        data-mode="continue">
+                        Continue
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-5 space-y-3 bg-slate-50" id="chatMessages">
+            <div class="max-w-[85%] rounded-md border bg-white p-3 text-sm text-slate-700 shadow-sm">
+                Tell me what to change. I will update the blueprint and refresh the preview on the left.
+            </div>
+        </div>
+
+        <form class="border-t bg-white p-4" id="agentEditForm">
+            <label class="sr-only" for="agentQuery">Edit request</label>
+            <textarea
+                id="agentQuery"
+                rows="4"
+                class="w-full resize-none rounded-md border border-slate-300 p-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                placeholder="Example: Rewrite block 1_3 to sound more professional"></textarea>
+            <div class="mt-3 flex items-center justify-between gap-3">
+                <p class="text-xs text-slate-500" id="agentStatus">Mode: New</p>
+                <button
+                    type="submit"
+                    class="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                    id="sendAgentEdit">
+                    Send
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const requestId = "{{ request_id }}";
+    const templateStorageKey = `ginga_templates_${requestId}`;
+    const pageControls = document.getElementById("pageControls");
+    const iframe = document.getElementById("htmlPreview");
+    const chatMessages = document.getElementById("chatMessages");
+    const agentEditForm = document.getElementById("agentEditForm");
+    const agentQuery = document.getElementById("agentQuery");
+    const agentStatus = document.getElementById("agentStatus");
+    const sendAgentEdit = document.getElementById("sendAgentEdit");
+
+    let placeholderJson = {};
+    let rawTemplates = {};
+    let currentPageKey = null;
+    let editMode = "new";
+    const maxLoadAttempts = 4;
+
+    function viewerMessageHtml(title, message, tone = "info", showReload = false) {
+        const color = tone === "error" ? "#b91c1c" : "#334155";
+        const buttonHtml = showReload
+            ? `<button onclick="parent.location.reload()" style="margin-top:16px;border:0;border-radius:6px;background:#0f172a;color:white;padding:10px 14px;font:600 14px sans-serif;cursor:pointer;">Reload</button>`
+            : "";
+        return `
+            <div style="min-height:100vh;box-sizing:border-box;display:flex;align-items:center;justify-content:center;padding:32px;font-family:Arial,sans-serif;background:#f8fafc;color:${color};">
+                <div style="max-width:440px;text-align:center;">
+                    <h3 style="margin:0 0 10px;font-size:18px;">${title}</h3>
+                    <p style="margin:0;color:#64748b;line-height:1.5;font-size:14px;">${message}</p>
+                    ${buttonHtml}
+                </div>
+            </div>
+        `;
+    }
+
+    function showViewerLoading(attempt = 1) {
+        const retryText = attempt > 1 ? ` Retrying ${attempt}/${maxLoadAttempts}...` : "";
+        iframe.srcdoc = viewerMessageHtml(
+            "Loading preview",
+            `Fetching templates and placeholder data. This can take some time.${retryText}`
+        );
+    }
+
+    function showViewerError(message) {
+        iframe.srcdoc = viewerMessageHtml("Failed to load preview", message, "error", true);
+    }
+
+    function wait(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    async function fetchJsonWithRetry(url, label, options = {}) {
+        const attempts = options.attempts || maxLoadAttempts;
+        const retryStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
+        let lastError = null;
+
+        for (let attempt = 1; attempt <= attempts; attempt += 1) {
+            if (options.onAttempt) options.onAttempt(attempt);
+
+            try {
+                const res = await fetch(url);
+                if (res.ok) return await res.json();
+
+                const detail = await res.text();
+                lastError = new Error(`${label} failed: ${res.status} ${detail}`);
+                lastError.retryable = retryStatuses.has(res.status);
+                if (!lastError.retryable || attempt === attempts) {
+                    throw lastError;
+                }
+            } catch (error) {
+                lastError = error;
+                if (error.retryable === false || attempt === attempts) break;
+            }
+
+            await wait(1200 * attempt);
+        }
+
+        throw lastError || new Error(`${label} failed`);
+    }
+
+    function normalizePlaceholders(payload) {
+        let parsed = payload;
+        if (typeof parsed === "string") {
+            try {
+                parsed = JSON.parse(parsed);
+            } catch (_) {
+                parsed = {};
+            }
+        }
+        if (!parsed || typeof parsed !== "object") return {};
+        return parsed;
+    }
+
+    function loadCachedTemplates() {
+        try {
+            const cached = sessionStorage.getItem(templateStorageKey);
+            return cached ? JSON.parse(cached) : {};
+        } catch (_) {
+            return {};
+        }
+    }
+
+    function renderPageControls() {
+        const pageKeys = Object.keys(rawTemplates);
+        pageControls.innerHTML = pageKeys.map((pageKey) => `
+            <button
+                class="page-btn px-3 py-1.5 text-xs rounded-md border bg-white hover:bg-slate-100"
+                data-page="${pageKey}">
+                Page ${pageKey}
+            </button>
+        `).join("");
+
+        document.querySelectorAll(".page-btn").forEach((btn) => {
+            btn.addEventListener("click", () => renderPage(btn.dataset.page));
+        });
+    }
+
+    function setEditMode(mode) {
+        editMode = mode;
+        agentStatus.textContent = `Mode: ${mode === "new" ? "New" : "Continue"}`;
+        document.querySelectorAll(".mode-btn").forEach((btn) => {
+            const isActive = btn.dataset.mode === editMode;
+            btn.classList.toggle("bg-slate-900", isActive);
+            btn.classList.toggle("text-white", isActive);
+            btn.classList.toggle("border-slate-900", isActive);
+            btn.classList.toggle("bg-white", !isActive);
+            btn.classList.toggle("text-slate-700", !isActive);
+        });
+    }
+
+    function appendChatMessage(text, from = "agent") {
+        const bubble = document.createElement("div");
+        bubble.className = from === "user"
+            ? "ml-auto max-w-[85%] rounded-md bg-slate-900 p-3 text-sm text-white shadow-sm"
+            : "max-w-[85%] rounded-md border bg-white p-3 text-sm text-slate-700 shadow-sm";
+        bubble.textContent = text;
+        chatMessages.appendChild(bubble);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    async function renderPage(pageKey) {
+        currentPageKey = pageKey;
+        const templateStr = rawTemplates[pageKey];
+        if (!templateStr) return;
+
+        const res = await fetch("/vault/render-html", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                template_str: templateStr,
+                placeholders: placeholderJson,
+                show_block_id: true
+            })
+        });
+        if (!res.ok) {
+            const message = await res.text();
+            throw new Error(`Render failed: ${res.status} ${message}`);
+        }
+
+        const payload = await res.json();
+        const renderedHtml = payload.html || "";
+        iframe.srcdoc = renderedHtml;
+
+        document.querySelectorAll(".page-btn").forEach((btn) => {
+            const isActive = btn.dataset.page === currentPageKey;
+            btn.classList.toggle("bg-slate-900", isActive);
+            btn.classList.toggle("text-white", isActive);
+            btn.classList.toggle("border-slate-900", isActive);
+        });
+    }
+
+    async function submitAgentEdit(event) {
+        event.preventDefault();
+        const userQuery = agentQuery.value.trim();
+        if (!userQuery || sendAgentEdit.disabled) return;
+
+        appendChatMessage(userQuery, "user");
+        agentQuery.value = "";
+        sendAgentEdit.disabled = true;
+        agentStatus.textContent = "Updating blueprint...";
+
+        try {
+            const res = await fetch(`/agent-edit/${encodeURIComponent(requestId)}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    user_query: userQuery,
+                    mode: editMode
+                })
+            });
+
+            if (!res.ok) {
+                const message = await res.text();
+                throw new Error(`Agent edit failed: ${res.status} ${message}`);
+            }
+
+            const payload = await res.json();
+            placeholderJson = normalizePlaceholders(payload.placeholder_json);
+
+            if (currentPageKey) {
+                await renderPage(currentPageKey);
+            }
+
+            const messages = Array.isArray(payload.messages) ? payload.messages : [];
+            const lastMessage = messages.length ? messages[messages.length - 1] : null;
+            appendChatMessage(
+                typeof lastMessage === "string"
+                    ? lastMessage
+                    : "Updated the blueprint and refreshed the preview."
+            );
+            setEditMode("continue");
+        } catch (error) {
+            console.error("Agent edit failed:", error);
+            appendChatMessage("I could not update the blueprint. Please try again or check the server logs.");
+        } finally {
+            sendAgentEdit.disabled = false;
+            agentStatus.textContent = `Mode: ${editMode === "new" ? "New" : "Continue"}`;
+        }
+    }
+
+    async function initViewer() {
+        showViewerLoading();
+
+        const resultData = await fetchJsonWithRetry(
+            `/vault/result/${encodeURIComponent(requestId)}`,
+            "Result fetch",
+            { onAttempt: showViewerLoading }
+        );
+        placeholderJson = normalizePlaceholders(resultData.placeholder_json);
+
+        try {
+            const templatesData = await fetchJsonWithRetry(
+                `/vault/result/${encodeURIComponent(requestId)}/templates`,
+                "Template fetch",
+                { onAttempt: showViewerLoading }
+            );
+            rawTemplates = templatesData.templates || {};
+            sessionStorage.setItem(templateStorageKey, JSON.stringify(rawTemplates));
+        } catch (error) {
+            rawTemplates = loadCachedTemplates();
+            if (Object.keys(rawTemplates).length === 0) {
+                throw error;
+            }
+            console.warn("Template fetch failed; using cached templates.", error);
+        }
+
+        renderPageControls();
+
+        const firstPage = Object.keys(rawTemplates)[0];
+        if (firstPage) {
+            await renderPage(firstPage);
+        } else {
+            const emptyMessage = "<h3 style='padding:24px;font-family:sans-serif;'>No templates found for this request.</h3>";
+            iframe.srcdoc = emptyMessage;
+        }
+    }
+
+    document.querySelectorAll(".mode-btn").forEach((btn) => {
+        btn.addEventListener("click", () => setEditMode(btn.dataset.mode));
+    });
+
+    agentEditForm.addEventListener("submit", submitAgentEdit);
+    setEditMode("new");
+
+    initViewer().catch((error) => {
+        console.error("Viewer init failed:", error);
+        showViewerError("Supabase is taking longer than expected. Reload the page to try again.");
+    });
+</script>
+{% endblock %}
