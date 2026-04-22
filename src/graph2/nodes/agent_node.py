@@ -7,11 +7,11 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 from typing_extensions import Annotated
 
-from state.schemas import WriterState
-from tools.change_block_tool import change_block, _apply_block_change
-from tools.rewrite_all_tool import rewrite_all
-from tools.rewrite_block_tool import  rewrite_block, _find_block ,_build_rewrite_prompt, _apply_rewrite_block , _apply_rewrite_block
-from utils.llm import get_llm 
+from src.graph2.state.schemas import WriterState
+from src.graph2.tools.change_block_tool import change_block, _apply_block_change
+from src.graph2.tools.rewrite_all_tool import rewrite_all
+from src.graph2.tools.rewrite_block_tool import  rewrite_block, _find_block ,_build_rewrite_prompt, _apply_rewrite_block , _apply_rewrite_block
+from src.utils.llm import get_llm 
 
 
 TOOLS = [rewrite_block, rewrite_all, change_block]

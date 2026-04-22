@@ -3,11 +3,11 @@ uvicorn
 pydantic
 pydantic-settings
 typing-extensions
-supabase
+supabase==2.28.3
 httpx
 PyMuPDF
 Pillow
-torch==2.2.0
+torch==2.11.0
 weasyprint
 transformers
 ultralytics
@@ -15,3 +15,5 @@ jinja2
 langchain-core
 langgraph
 langchain-openai
+email-validator
+
