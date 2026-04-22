@@ -16,4 +16,5 @@ langchain-core
 langgraph
 langchain-openai
 email-validator
+python-multipart
 
