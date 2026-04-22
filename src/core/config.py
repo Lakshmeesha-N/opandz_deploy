@@ -1,3 +1,7 @@
+from pydantic_settings import BaseSettings
+from pathlib import Path
+from typing import Optional
+PROJECT_ROOT = Path(__file__).parent.parent
 class Settings(BaseSettings):
     # --- LLM CONFIG ---
     llm_provider: str = "openai"   # default, overridden by .env
