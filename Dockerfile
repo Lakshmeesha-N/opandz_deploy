@@ -1,7 +1,7 @@
 # Base Image
-FROM python:3.11.8
+FROM python:3.11.8-slim
 
-
+# Install system dependencies required for WeasyPrint, PyMuPDF, YOLO, and libGL
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpango-1.0-0 \
@@ -10,6 +10,9 @@ RUN apt-get update && apt-get install -y \
     libgdk-pixbuf-2.0-0 \
     libffi-dev \
     shared-mime-info \
+    libgl1 \
+    libglib2.0-0 \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Working Directory
@@ -18,7 +21,7 @@ WORKDIR /app
 # Copy Requirements First (for caching)
 COPY requirements.txt .
 
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # Copy Project Files
 COPY . .
